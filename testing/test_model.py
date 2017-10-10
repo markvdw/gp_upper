@@ -18,8 +18,17 @@ import unittest
 
 import numpy as np
 
-import gpflow
 import gp_upper
+import gpflow
+
+
+def get_parameter_dict(model):
+    return {p.full_name.split(model.full_name)[1]: p.read_value() for p in model.parameters}
+
+
+def set_parameter_dict(model, d):
+    assign_params = {p.full_name.split(model.full_name)[1]: p for p in model.parameters}
+    [assign_params[k].assign(d[k]) for k in d]
 
 
 class TestUpperBound(unittest.TestCase):
@@ -32,24 +41,26 @@ class TestUpperBound(unittest.TestCase):
         self.Y = np.sin(1.5 * 2 * np.pi * self.X) + np.random.randn(*self.X.shape) * 0.1
 
     def test_few_inducing_points(self):
-        vfe = gpflow.sgpr.SGPR(self.X, self.Y, gpflow.kernels.RBF(1), self.X[:10, :].copy())
-        vfe.optimize()
+        vfe = gpflow.models.SGPR(self.X, self.Y, gpflow.kernels.RBF(1), self.X[:10, :].copy())
+        vfe.compile()
+        gpflow.train.ScipyOptimizer().minimize(vfe)
 
         upper = gp_upper.SGPU(self.X, self.Y, gpflow.kernels.RBF(1), self.X[:10, :].copy())
-        upper.set_parameter_dict(vfe.get_parameter_dict())
-        upper.kern.fixed = True
-        upper.likelihood.fixed = True
-        upper.optimize()
+        upper.kern.set_trainable(False)
+        upper.likelihood.set_trainable(False)
+        upper.compile()
+        set_parameter_dict(upper, get_parameter_dict(vfe))
+        gpflow.train.ScipyOptimizer().minimize(upper)
 
-        full = gpflow.gpr.GPR(self.X, self.Y, gpflow.kernels.RBF(1))
-        full.kern.lengthscales = vfe.kern.lengthscales.value
-        full.kern.variance = vfe.kern.variance.value
-        full.likelihood.variance = vfe.likelihood.variance.value
-        full._compile()
+        full = gpflow.models.GPR(self.X, self.Y, gpflow.kernels.RBF(1))
+        full.kern.lengthscales = vfe.kern.lengthscales.read_value()
+        full.kern.variance = vfe.kern.variance.read_value()
+        full.likelihood.variance = vfe.likelihood.variance.read_value()
+        full.compile()
 
         lml_upper = upper.compute_upper_bound()
-        lml_vfe = -vfe._objective(vfe.get_free_state())[0]
-        lml_full = -full._objective(full.get_free_state())[0]
+        lml_vfe = vfe.compute_log_likelihood()
+        lml_full = full.compute_log_likelihood()
 
         self.assertTrue(lml_upper > lml_full > lml_vfe)
 

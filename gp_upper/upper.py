@@ -15,14 +15,15 @@
 
 from __future__ import absolute_import
 
+import gpflow
+import gpflow.decors
 import numpy as np
 import tensorflow as tf
-import gpflow
 
 float_type = gpflow.settings.dtypes.float_type
 
 
-class SGPU(gpflow.sgpr.SGPR):
+class SGPU(gpflow.models.SGPR):
     """
     Upper bound for the GP regression marginal likelihood. Upper bound counterpart to SGPR. The key reference is
 
@@ -38,7 +39,8 @@ class SGPU(gpflow.sgpr.SGPR):
       }
     """
 
-    def build_likelihood(self):
+    @gpflow.decors.params_as_tensors
+    def _build_likelihood(self):
         # Upper bound - its negative will be minimized
         num_inducing = tf.shape(self.Z)[0]
         num_data = tf.cast(tf.shape(self.Y)[0], float_type)
@@ -72,6 +74,6 @@ class SGPU(gpflow.sgpr.SGPR):
     def build_prior(self):
         return 0.0
 
-    @gpflow.param.AutoFlow()
+    @gpflow.decors.autoflow()
     def compute_upper_bound(self):
-        return -self.build_likelihood()
+        return -self._likelihood_tensor
