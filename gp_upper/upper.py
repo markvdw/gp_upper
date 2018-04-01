@@ -15,10 +15,12 @@
 
 from __future__ import absolute_import
 
-import gpflow
-import gpflow.decors
 import numpy as np
 import tensorflow as tf
+
+import gpflow
+import gpflow.decors
+import gpflow.features
 
 float_type = gpflow.settings.dtypes.float_type
 
@@ -42,12 +44,11 @@ class SGPU(gpflow.models.SGPR):
     @gpflow.decors.params_as_tensors
     def _build_likelihood(self):
         # Upper bound - its negative will be minimized
-        num_inducing = tf.shape(self.Z)[0]
         num_data = tf.cast(tf.shape(self.Y)[0], float_type)
 
         Kdiag = self.kern.Kdiag(self.X)
-        Kuu = self.kern.K(self.Z) + tf.eye(num_inducing, dtype=float_type) * gpflow.settings.numerics.jitter_level
-        Kuf = self.kern.K(self.Z, self.X)
+        Kuu = gpflow.features.Kuu(self.feature, self.kern, jitter=gpflow.settings.jitter)
+        Kuf = gpflow.features.Kuf(self.feature, self.kern, self.X)
 
         L = tf.cholesky(Kuu)
         LB = tf.cholesky(Kuu + self.likelihood.variance ** -1.0 * tf.matmul(Kuf, Kuf, transpose_b=True))
